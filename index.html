@@ -1,0 +1,528 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta
+      name="description"
+      content="A tactile, elastic blur slider, built with plain HTML, CSS and JavaScript."
+    />
+    <title>Elastic Slider</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: #fff;
+        color: #171717;
+        font-family: Arial, Helvetica, sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+      main {
+        min-height: 100svh;
+        display: grid;
+        place-items: center;
+        padding: 32px;
+      }
+      .slider-wrap {
+        width: min(360px, calc(100vw - 80px));
+        position: relative;
+      }
+      .slider {
+        --radius: 24px;
+        --fill: 32%;
+        --grip: 32%;
+        overflow: hidden;
+        position: relative;
+        height: 68px;
+        width: 100%;
+        border-radius: 24px;
+        background: #f0f0f0;
+        isolation: isolate;
+        touch-action: none;
+        user-select: none;
+        -webkit-user-select: none;
+        cursor: grab;
+        will-change: transform;
+        outline: none;
+      }
+      .slider:active {
+        cursor: grabbing;
+      }
+      .slider:focus-visible {
+        outline: 2px solid #999;
+        outline-offset: 7px;
+      }
+      .fill {
+        position: absolute;
+        inset: 0 auto 0 0;
+        width: 100%;
+        border-radius: var(--radius);
+        background: #000;
+        transform: translateX(calc(var(--fill) - 100%));
+        will-change: transform;
+      }
+      .labels {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 22px;
+        font-size: 20px;
+        letter-spacing: -0.45px;
+        pointer-events: none;
+      }
+      .labels .value {
+        color: #747474;
+        font-variant-numeric: tabular-nums;
+      }
+      .labels.inverted {
+        color: white;
+        clip-path: inset(
+          0 calc(100% - var(--fill)) 0 calc(var(--fill) - 100%) round
+            var(--radius)
+        );
+        will-change: clip-path;
+      }
+      .labels.inverted .value {
+        color: #a3a3a3;
+      }
+      .grip {
+        position: absolute;
+        left: clamp(17px, calc(var(--grip) - 16px), calc(100% - 19px));
+        top: 22px;
+        width: 5px;
+        height: 24px;
+        border-radius: 4px;
+        background: #fff;
+        opacity: 0.9;
+        pointer-events: none;
+        transition: opacity 0.15s;
+      }
+      .slider[data-low="true"] .grip {
+        background: #b7b7b7;
+      }
+      .slider[data-high="true"] .grip {
+        opacity: 0.4;
+      }
+      .hint {
+        position: absolute;
+        top: calc(100% + 24px);
+        width: 100%;
+        text-align: center;
+        font-size: 12px;
+        color: #aaa;
+        opacity: 0;
+        transition: opacity 0.3s;
+      }
+      .slider-wrap:focus-within .hint {
+        opacity: 1;
+      }
+      @media (max-width: 480px) {
+        .slider {
+          --radius: 21px;
+          height: 60px;
+          border-radius: 21px;
+        }
+        .fill {
+          border-radius: 21px;
+        }
+        .labels {
+          font-size: 18px;
+          padding: 0 19px;
+        }
+        .grip {
+          top: 19px;
+          height: 22px;
+        }
+        .footer {
+          font-size: 10px;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .hint,
+        .grip {
+          transition: none;
+        }
+      }
+      /* Precision readout: display changes only; pointer coordinates remain unchanged. */
+      .fill,
+      .labels.inverted {
+        transition: opacity 0.16s ease;
+      }
+      .labels > span:first-child {
+        transition: transform 0.2s ease;
+      }
+      .precision {
+        position: absolute;
+        left: 22px;
+        top: 50%;
+        display: flex;
+        gap: 0;
+        align-items: center;
+        transform: translateY(-50%) scaleX(0.5);
+        transform-origin: left center;
+        opacity: 0;
+        pointer-events: none;
+        transition:
+          opacity 0.16s ease,
+          transform 0.2s ease;
+      }
+      .precision i {
+        display: grid;
+        place-items: center;
+        width: 8px;
+        height: 36px;
+        cursor: pointer;
+      }
+      .precision i::after {
+        content: "";
+        width: 4px;
+        height: 18px;
+        border-radius: 2px;
+        background: #d1d1d1;
+        transition: background-color 0.1s ease;
+      }
+      .precision i[data-active="true"]::after {
+        background: #343434;
+      }
+      .slider[data-precision="true"]:not([data-dragging="true"]) .precision {
+        pointer-events: auto;
+      }
+      .precision i:hover::after {
+        background: #777;
+      }
+      .slider[data-precision="true"] .fill,
+      .slider[data-precision="true"] .labels.inverted,
+      .slider[data-precision="true"] .grip {
+        opacity: 0;
+      }
+      .slider[data-precision="true"] .precision {
+        opacity: 1;
+        transform: translateY(-50%) scaleX(1);
+      }
+      .slider[data-precision="true"] .labels > span:first-child {
+        transform: translateX(50px);
+      }
+      @media (max-width: 480px) {
+        .precision {
+          left: 19px;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .fill,
+        .labels.inverted,
+        .labels > span:first-child,
+        .precision,
+        .precision i {
+          transition: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="slider-wrap">
+        <div
+          class="slider"
+          role="slider"
+          tabindex="0"
+          aria-label="Blur"
+          aria-valuemin="0"
+          aria-valuemax="100"
+          aria-valuenow="85"
+          aria-valuetext="85 pixels"
+          data-precision="false"
+          data-low="false"
+          data-high="false"
+          data-dragging="false"
+          style="
+            --fill: 85%;
+            --grip: 85%;
+            transform-origin: left center;
+            transform: scale(1, 1);
+          "
+        >
+          <div class="fill"></div>
+          <div class="labels">
+            <span>Blur</span><span class="value">85 px</span>
+          </div>
+          <div class="labels inverted" aria-hidden="true">
+            <span>Blur</span><span class="value">85 px</span>
+          </div>
+          <div class="grip"></div>
+          <div class="precision" aria-hidden="true">
+            <i data-active="true" title="1 px"></i
+            ><i data-active="true" title="2 px"></i
+            ><i data-active="true" title="3 px"></i
+            ><i data-active="true" title="4 px"></i
+            ><i data-active="true" title="5 px"></i>
+          </div>
+        </div>
+        <div class="hint">
+          Drag or scroll · Tap a bar for 1–5 px · PgUp/Down for 10 px
+        </div>
+      </div>
+    </main>
+    <script>
+      /* Keep the fill at full width and translate it behind the clipped track.
+   This preserves its corner radius even at very low values.
+   The two text layers are identical. Clipping the white layer to the fill
+   keeps both labels legible while the black edge passes underneath them. */
+      const slider = document.querySelector(".slider");
+      const values = slider.querySelectorAll(".value");
+      const indicators = slider.querySelectorAll(".precision i");
+      const reduced = matchMedia("(prefers-reduced-motion: reduce)");
+      let value = 32,
+        visual = 32,
+        velocity = 0,
+        stretch = 0,
+        stretchVelocity = 0,
+        targetStretch = 0;
+      let dragging = false,
+        pointerId = null,
+        bounds,
+        frame = 0;
+      const clamp = (n, a, b) => Math.min(b, Math.max(a, n));
+      function draw() {
+        slider.style.setProperty("--fill", visual + "%");
+        slider.style.setProperty("--grip", visual + "%");
+        const s = Math.abs(stretch);
+        slider.style.transformOrigin =
+          stretch < 0 ? "right center" : "left center";
+        slider.style.transform = `scale(${1 + s / 360},${1 - s / 900})`;
+        slider.dataset.low = visual < 8;
+        slider.dataset.high = visual > 94;
+      }
+      function updateValue(next) {
+        value = clamp(Math.round(next), 0, 100);
+        values.forEach((el) => (el.textContent = value + " px"));
+        slider.dataset.precision = value <= 5;
+        indicators.forEach((indicator, index) => {
+          indicator.dataset.active = index < value;
+          indicator.title = index + 1 + " px";
+        });
+        slider.setAttribute("aria-valuenow", value);
+        slider.setAttribute("aria-valuetext", value + " pixels");
+      }
+      let previousTime = 0;
+      function animate(time) {
+        const dt = Math.min((time - previousTime) / 16.667 || 1, 2);
+        previousTime = time;
+        if (reduced.matches) {
+          visual = value;
+          stretch = 0;
+          velocity = stretchVelocity = 0;
+        } else {
+          velocity += (value - visual) * 0.2 * dt;
+          velocity *= Math.pow(0.64, dt);
+          visual += velocity * dt;
+          stretchVelocity += (targetStretch - stretch) * 0.18 * dt;
+          stretchVelocity *= Math.pow(0.62, dt);
+          stretch += stretchVelocity * dt;
+          visual = clamp(visual, 0, 100);
+        }
+        draw();
+        if (
+          Math.abs(value - visual) > 0.005 ||
+          Math.abs(velocity) > 0.005 ||
+          Math.abs(targetStretch - stretch) > 0.005 ||
+          Math.abs(stretchVelocity) > 0.005
+        ) {
+          frame = requestAnimationFrame(animate);
+        } else {
+          visual = value;
+          stretch = targetStretch;
+          draw();
+          frame = 0;
+          previousTime = 0;
+        }
+      }
+      function schedule() {
+        if (!frame) frame = requestAnimationFrame(animate);
+      }
+      function move(x) {
+        const raw = (x - bounds.left) / bounds.width;
+        updateValue(raw * 100);
+        // A saturating rubber-band curve limits the stretch outside the track.
+        const overflow =
+          raw < 0 ? raw * bounds.width : raw > 1 ? (raw - 1) * bounds.width : 0;
+        targetStretch =
+          Math.sign(overflow) * 32 * (1 - Math.exp(-Math.abs(overflow) / 100));
+        schedule();
+      }
+      // A press on a precision indicator is a tap candidate until it moves.
+      // Capturing the pointer keeps an existing drag continuous through low values.
+      let tapCandidate = null;
+      slider.addEventListener("pointerdown", (e) => {
+        if (e.button !== 0 || pointerId !== null) return;
+        bounds = slider.getBoundingClientRect();
+        pointerId = e.pointerId;
+        const index = Array.from(indicators).indexOf(e.target);
+        tapCandidate =
+          value <= 5 && index >= 0
+            ? { value: index + 1, x: e.clientX, y: e.clientY }
+            : null;
+        dragging = !tapCandidate;
+        slider.dataset.dragging = dragging;
+        slider.setPointerCapture(pointerId);
+        slider.focus({ preventScroll: true });
+        if (dragging) move(e.clientX);
+      });
+      slider.addEventListener("pointermove", (e) => {
+        if (e.pointerId !== pointerId) return;
+        if (
+          tapCandidate &&
+          Math.hypot(e.clientX - tapCandidate.x, e.clientY - tapCandidate.y) > 4
+        ) {
+          tapCandidate = null;
+          dragging = true;
+          slider.dataset.dragging = true;
+        }
+        if (dragging) move(e.clientX);
+      });
+      function release(e) {
+        if (e.pointerId !== pointerId) return;
+        if (e.type === "pointerup" && tapCandidate)
+          updateValue(tapCandidate.value);
+        tapCandidate = null;
+        dragging = false;
+        slider.dataset.dragging = false;
+        pointerId = null;
+        targetStretch = 0;
+        schedule();
+      }
+      slider.addEventListener("pointerup", release);
+      slider.addEventListener("pointercancel", release);
+      slider.addEventListener("lostpointercapture", release);
+      let wheelRemainder = 0,
+        lastWheel = 0;
+      slider.addEventListener(
+        "wheel",
+        (e) => {
+          // Preserve browser pinch-to-zoom and do not compete with a captured drag.
+          if (e.ctrlKey || pointerId !== null || !e.deltaY) return;
+          e.preventDefault();
+          const delta =
+            e.deltaY *
+            (e.deltaMode === 1
+              ? 16
+              : e.deltaMode === 2
+                ? bounds?.height || 68
+                : 1);
+          if (
+            e.timeStamp - lastWheel > 180 ||
+            Math.sign(delta) !== Math.sign(wheelRemainder)
+          )
+            wheelRemainder = 0;
+          lastWheel = e.timeStamp;
+          wheelRemainder += delta;
+          if (Math.abs(wheelRemainder) >= 40) {
+            updateValue(value - Math.sign(wheelRemainder));
+            wheelRemainder = 0;
+            schedule();
+          }
+        },
+        { passive: false },
+      );
+      slider.addEventListener("keydown", (e) => {
+        const step = e.shiftKey ? 10 : 1;
+        let next = value;
+        switch (e.key) {
+          case "ArrowRight":
+          case "ArrowUp":
+            next += step;
+            break;
+          case "ArrowLeft":
+          case "ArrowDown":
+            next -= step;
+            break;
+          case "Home":
+            next = 0;
+            break;
+          case "End":
+            next = 100;
+            break;
+          case "PageUp":
+            next += 10;
+            break;
+          case "PageDown":
+            next -= 10;
+            break;
+          default:
+            return;
+        }
+        e.preventDefault();
+        updateValue(next);
+        schedule();
+      });
+      slider.addEventListener("dblclick", () => {
+        updateValue(32);
+        schedule();
+      });
+      updateValue(value);
+      draw();
+    </script>
+    <script>
+      (function () {
+        function c() {
+          var b =
+            a.contentDocument || (a.contentWindow && a.contentWindow.document);
+          if (b) {
+            var d = b.createElement("script");
+            d.innerHTML =
+              "window.__CF$cv$params={r:'a4d7f5b21d4d8416',t:'MTc5MjQ5ODY0OQ=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";
+            b.getElementsByTagName("head")[0].appendChild(d);
+          }
+        }
+        if (document.body) {
+          var a = document.createElement("iframe");
+          a.height = 1;
+          a.width = 1;
+          a.style.position = "absolute";
+          a.style.top = 0;
+          a.style.left = 0;
+          a.style.border = "none";
+          a.style.visibility = "hidden";
+          document.body.appendChild(a);
+          if ("loading" !== document.readyState) c();
+          else if (window.addEventListener)
+            document.addEventListener("DOMContentLoaded", c);
+          else {
+            var e = document.onreadystatechange || function () {};
+            document.onreadystatechange = function (b) {
+              e(b);
+              "loading" !== document.readyState &&
+                ((document.onreadystatechange = e), c());
+            };
+          }
+        }
+      })();
+    </script>
+    <iframe
+      height="1"
+      width="1"
+      style="
+        position: absolute;
+        top: 0px;
+        left: 0px;
+        border-width: medium;
+        border-style: none;
+        border-color: currentcolor;
+        border-image: none;
+        visibility: hidden;
+      "
+    ></iframe>
+  </body>
+  <div
+    id="codex-browser-sidebar-comments-root"
+    style="
+      position: fixed;
+      inset: 0px;
+      pointer-events: none;
+      z-index: 2147483647;
+    "
+  ></div>
+</html>
