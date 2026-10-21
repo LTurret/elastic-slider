@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <meta
       name="description"
-      content="A tactile, elastic blur slider, built with plain HTML, CSS and JavaScript."
+      content="An elastic particle speed control with rolling, spring-soft digits."
     />
     <title>Elastic Slider</title>
     <style>
@@ -108,12 +108,15 @@
         opacity: 0.4;
       }
       .hint {
+        -webkit-user-select: none;
+        user-select: none;
         position: absolute;
         top: calc(100% + 24px);
         width: 100%;
         text-align: center;
         font-size: 12px;
-        color: #aaa;
+        color: #8a9294;
+        line-height: 1.7;
         opacity: 0;
         transition: opacity 0.3s;
       }
@@ -136,9 +139,6 @@
         .grip {
           top: 19px;
           height: 22px;
-        }
-        .footer {
-          font-size: 10px;
         }
       }
       @media (prefers-reduced-motion: reduce) {
@@ -220,52 +220,112 @@
           transition: none;
         }
       }
+      /* A quiet atmospheric field; the slider stays opaque and readable. */
+      body {
+        background: #fbfcfc;
+      }
+      #particles {
+        position: fixed;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        pointer-events: none;
+        opacity: 1;
+        transition: opacity 0.32s ease;
+      }
+      #particles[data-hidden="true"] {
+        opacity: 0;
+      }
+      @media (prefers-reduced-motion: reduce) {
+        #particles {
+          transition: none;
+        }
+      }
+      main {
+        position: relative;
+        z-index: 1;
+      }
+      .slider {
+        background: rgba(236, 239, 239, 0.96);
+        box-shadow:
+          0 1px 0 rgba(255, 255, 255, 0.8) inset,
+          0 10px 40px -25px rgba(30, 65, 75, 0.16);
+      }
+      .labels .value {
+        display: inline-flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 0;
+        white-space: nowrap;
+        line-height: 1.4;
+        letter-spacing: -0.45px;
+        min-width: 4.1em;
+        perspective: 240px;
+      }
+      .digit {
+        position: relative;
+        display: inline-block;
+        width: 0.56em;
+        height: 1.4em;
+      }
+      .glyph {
+        position: absolute;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        transform-origin: 50% 65%;
+        backface-visibility: hidden;
+      }
+      .unit {
+        display: inline-block;
+        margin-left: 0.12em;
+        font-size: 0.82em;
+        opacity: 0.85;
+      }
+      @media (hover: hover) {
+        .slider-wrap:hover .hint {
+          opacity: 1;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .precision i::after {
+          transition: none;
+        }
+      }
     </style>
   </head>
   <body>
+    <canvas id="particles" aria-hidden="true"></canvas>
     <main>
       <div class="slider-wrap">
         <div
           class="slider"
           role="slider"
           tabindex="0"
-          aria-label="Blur"
+          aria-label="Particle speed"
           aria-valuemin="0"
           aria-valuemax="100"
-          aria-valuenow="85"
-          aria-valuetext="85 pixels"
-          data-precision="false"
-          data-low="false"
-          data-high="false"
-          data-dragging="false"
-          style="
-            --fill: 85%;
-            --grip: 85%;
-            transform-origin: left center;
-            transform: scale(1, 1);
-          "
+          aria-valuenow="32"
+          aria-valuetext="32 percent"
         >
           <div class="fill"></div>
           <div class="labels">
-            <span>Blur</span><span class="value">85 px</span>
+            <span>Speed</span><span class="value">32%</span>
           </div>
           <div class="labels inverted" aria-hidden="true">
-            <span>Blur</span><span class="value">85 px</span>
+            <span>Speed</span><span class="value">32%</span>
           </div>
           <div class="grip"></div>
           <div class="precision" aria-hidden="true">
-            <i data-active="true" title="1 px"></i
-            ><i data-active="true" title="2 px"></i
-            ><i data-active="true" title="3 px"></i
-            ><i data-active="true" title="4 px"></i
-            ><i data-active="true" title="5 px"></i>
+            <i></i><i></i><i></i><i></i><i></i>
           </div>
         </div>
         <div class="hint">
-          Drag or scroll · Tap a bar for 1–5 px · PgUp/Down for 10 px
+          Drag or scroll · Tap a bar for 1–5% · PgUp/Down for 10%
         </div>
       </div>
     </main>
+
     <script>
       /* Keep the fill at full width and translate it behind the clipped track.
    This preserves its corner radius even at very low values.
@@ -296,16 +356,125 @@
         slider.dataset.low = visual < 8;
         slider.dataset.high = visual > 94;
       }
+      // Only changed digit columns roll; both color layers use the same timing.
+      const columns = Array.from(values, (el) => {
+        el.textContent = "";
+        el.setAttribute("aria-hidden", "true");
+        const slots = Array.from({ length: 3 }, () => {
+          const slot = document.createElement("span");
+          slot.className = "digit";
+          el.append(slot);
+          return slot;
+        });
+        const unit = document.createElement("span");
+        unit.className = "unit";
+        unit.textContent = "%";
+        el.append(unit);
+        return slots;
+      });
+      let displayedValue = null;
+      function renderValue(next) {
+        const previous = displayedValue;
+        const chars = String(next).padStart(3, " ");
+        const oldChars =
+          previous === null ? "   " : String(previous).padStart(3, " ");
+        const direction = previous === null || next >= previous ? 1 : -1;
+        const now = document.timeline.currentTime;
+        columns.forEach((slots) =>
+          slots.forEach((slot, index) => {
+            if (previous !== null && chars[index] === oldChars[index]) return;
+            slot
+              .getAnimations({ subtree: true })
+              .forEach((animation) => animation.cancel());
+            slot.replaceChildren();
+            const glyph = document.createElement("span");
+            glyph.className = "glyph";
+            glyph.textContent = chars[index];
+            slot.append(glyph);
+            if (previous === null || reduced.matches) return;
+            if (oldChars[index] !== " ") {
+              const ghost = document.createElement("span");
+              ghost.className = "glyph";
+              ghost.textContent = oldChars[index];
+              slot.prepend(ghost);
+              const outgoing = ghost.animate(
+                [
+                  {
+                    transform: "translateY(0) scale(1)",
+                    filter: "blur(0px)",
+                    opacity: 1,
+                  },
+                  {
+                    transform: `translateY(${-direction * 14}px) scale(.94,1.08)`,
+                    filter: "blur(3px)",
+                    opacity: 0,
+                  },
+                ],
+                {
+                  duration: 180,
+                  easing: "cubic-bezier(.3,0,.7,1)",
+                  fill: "forwards",
+                },
+              );
+              outgoing.startTime = now;
+              outgoing.onfinish = () => ghost.remove();
+            }
+            const incoming = glyph.animate(
+              [
+                {
+                  transform: `translateY(${direction * 15}px) scale(.94,1.1)`,
+                  filter: "blur(3px)",
+                  opacity: 0,
+                  offset: 0,
+                },
+                {
+                  transform: `translateY(${-direction * 3.5}px) scale(1.025,.97)`,
+                  filter: "blur(0px)",
+                  opacity: 1,
+                  offset: 0.48,
+                },
+                {
+                  transform: `translateY(${direction * 1.2}px) scale(.995,1.01)`,
+                  filter: "blur(0px)",
+                  opacity: 1,
+                  offset: 0.73,
+                },
+                {
+                  transform: "translateY(0) scale(1)",
+                  filter: "blur(0px)",
+                  opacity: 1,
+                  offset: 1,
+                },
+              ],
+              { duration: 430, easing: "ease-out" },
+            );
+            incoming.startTime = now;
+          }),
+        );
+        displayedValue = next;
+      }
       function updateValue(next) {
+        const old = value;
         value = clamp(Math.round(next), 0, 100);
-        values.forEach((el) => (el.textContent = value + " px"));
+        renderValue(value);
+        particleImpulse = Math.min(
+          1,
+          particleImpulse + Math.abs(value - old) * 0.035,
+        );
         slider.dataset.precision = value <= 5;
         indicators.forEach((indicator, index) => {
           indicator.dataset.active = index < value;
-          indicator.title = index + 1 + " px";
+          indicator.title = index + 1 + "%";
         });
         slider.setAttribute("aria-valuenow", value);
-        slider.setAttribute("aria-valuetext", value + " pixels");
+        slider.setAttribute("aria-valuetext", value + " percent");
+        canvas.dataset.hidden = value <= 5;
+        if (value <= 5) {
+          particleSpeed = value;
+          particleImpulse = 0;
+          stopParticles();
+        } else if (reduced.matches) paintParticles(0);
+        else startParticles();
       }
       let previousTime = 0;
       function animate(time) {
@@ -462,67 +631,128 @@
         updateValue(32);
         schedule();
       });
+      // Canvas particles use elapsed seconds, so speed is independent of refresh rate.
+      const canvas = document.querySelector("#particles");
+      const ctx = canvas.getContext("2d");
+      let fieldWidth = 0,
+        fieldHeight = 0,
+        particles = [],
+        particleFrame = 0,
+        lastParticleTime = 0;
+      let particleSpeed = 32,
+        particleImpulse = 0;
+      function resizeField() {
+        fieldWidth = innerWidth;
+        fieldHeight = innerHeight;
+        const dpr = Math.min(devicePixelRatio || 1, 2);
+        canvas.width = Math.round(fieldWidth * dpr);
+        canvas.height = Math.round(fieldHeight * dpr);
+        ctx?.setTransform(dpr, 0, 0, dpr, 0, 0);
+        const count = Math.max(
+          35,
+          Math.min(110, Math.round((fieldWidth * fieldHeight) / 12000)),
+        );
+        particles = Array.from({ length: count }, () => ({
+          x: Math.random() * fieldWidth,
+          y: Math.random() * fieldHeight,
+          depth: 0.25 + Math.random() * 0.75,
+          radius: 0.6 + Math.random() * 1.5,
+          phase: Math.random() * Math.PI * 2,
+        }));
+        paintParticles(0);
+      }
+      function paintParticles(dt) {
+        if (!ctx) return;
+        ctx.clearRect(0, 0, fieldWidth, fieldHeight);
+        const atmosphere = ctx.createRadialGradient(
+          fieldWidth * 0.65,
+          fieldHeight * 0.43,
+          0,
+          fieldWidth * 0.65,
+          fieldHeight * 0.43,
+          Math.max(fieldWidth, fieldHeight) * 0.7,
+        );
+        atmosphere.addColorStop(0, "rgba(203,226,226,.24)");
+        atmosphere.addColorStop(0.5, "rgba(226,233,242,.12)");
+        atmosphere.addColorStop(1, "rgba(255,255,255,0)");
+        ctx.fillStyle = atmosphere;
+        ctx.fillRect(0, 0, fieldWidth, fieldHeight);
+        const speed = (particleSpeed / 100) ** 1.5 * 380;
+        particles.forEach((p) => {
+          p.x +=
+            dt * speed * (0.3 + p.depth * 0.7) * (1 + particleImpulse * 0.4);
+          if (p.x > fieldWidth + 35) {
+            p.x = -35;
+            p.y = Math.random() * fieldHeight;
+          }
+          const y = p.y + Math.sin(p.phase + p.x * 0.003) * 5;
+          const trail = (particleSpeed / 100) ** 2 * 24 * p.depth;
+          if (trail > 1) {
+            const line = ctx.createLinearGradient(p.x - trail, y, p.x, y);
+            line.addColorStop(0, "rgba(116,157,167,0)");
+            line.addColorStop(1, `rgba(116,157,167,${0.12 * p.depth})`);
+            ctx.strokeStyle = line;
+            ctx.lineWidth = p.radius * 0.65;
+            ctx.beginPath();
+            ctx.moveTo(p.x - trail, y);
+            ctx.lineTo(p.x, y);
+            ctx.stroke();
+          }
+          ctx.fillStyle = `rgba(101,143,155,${0.12 + p.depth * 0.18})`;
+          ctx.beginPath();
+          ctx.arc(p.x, y, p.radius, 0, Math.PI * 2);
+          ctx.fill();
+        });
+      }
+      function tickParticles(time) {
+        particleFrame = 0;
+        if (document.hidden || reduced.matches) {
+          lastParticleTime = 0;
+          return;
+        }
+        const dt = Math.min((time - lastParticleTime) / 1000 || 0, 0.04);
+        lastParticleTime = time;
+        particleSpeed += (value - particleSpeed) * (1 - Math.exp(-dt * 5));
+        particleImpulse *= Math.exp(-dt * 3);
+        paintParticles(dt);
+        if (value > 0 || particleSpeed > 0.02 || particleImpulse > 0.01)
+          particleFrame = requestAnimationFrame(tickParticles);
+        else {
+          particleSpeed = 0;
+          lastParticleTime = 0;
+        }
+      }
+      function startParticles() {
+        if (
+          ctx &&
+          value > 5 &&
+          !particleFrame &&
+          !document.hidden &&
+          !reduced.matches
+        )
+          particleFrame = requestAnimationFrame(tickParticles);
+      }
+      function stopParticles() {
+        cancelAnimationFrame(particleFrame);
+        particleFrame = 0;
+        lastParticleTime = 0;
+      }
+      addEventListener("resize", resizeField);
+      document.addEventListener("visibilitychange", () => {
+        if (document.hidden) stopParticles();
+        else startParticles();
+      });
+      reduced.addEventListener("change", () => {
+        if (reduced.matches) {
+          stopParticles();
+          displayedValue = null;
+          renderValue(value);
+          paintParticles(0);
+        } else startParticles();
+      });
+      resizeField();
       updateValue(value);
       draw();
     </script>
-    <script>
-      (function () {
-        function c() {
-          var b =
-            a.contentDocument || (a.contentWindow && a.contentWindow.document);
-          if (b) {
-            var d = b.createElement("script");
-            d.innerHTML =
-              "window.__CF$cv$params={r:'a4d7f5b21d4d8416',t:'MTc5MjQ5ODY0OQ=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";
-            b.getElementsByTagName("head")[0].appendChild(d);
-          }
-        }
-        if (document.body) {
-          var a = document.createElement("iframe");
-          a.height = 1;
-          a.width = 1;
-          a.style.position = "absolute";
-          a.style.top = 0;
-          a.style.left = 0;
-          a.style.border = "none";
-          a.style.visibility = "hidden";
-          document.body.appendChild(a);
-          if ("loading" !== document.readyState) c();
-          else if (window.addEventListener)
-            document.addEventListener("DOMContentLoaded", c);
-          else {
-            var e = document.onreadystatechange || function () {};
-            document.onreadystatechange = function (b) {
-              e(b);
-              "loading" !== document.readyState &&
-                ((document.onreadystatechange = e), c());
-            };
-          }
-        }
-      })();
-    </script>
-    <iframe
-      height="1"
-      width="1"
-      style="
-        position: absolute;
-        top: 0px;
-        left: 0px;
-        border-width: medium;
-        border-style: none;
-        border-color: currentcolor;
-        border-image: none;
-        visibility: hidden;
-      "
-    ></iframe>
   </body>
-  <div
-    id="codex-browser-sidebar-comments-root"
-    style="
-      position: fixed;
-      inset: 0px;
-      pointer-events: none;
-      z-index: 2147483647;
-    "
-  ></div>
 </html>
